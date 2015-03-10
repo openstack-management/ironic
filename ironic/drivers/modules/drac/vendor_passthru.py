@@ -35,13 +35,14 @@ class DracVendorPassthru(base.VendorInterface):
 
     @base.passthru(['POST'], async=False)
     def set_bios_config(self, task, **kwargs):
-        return {'commit_needed': bios.set_config(task, **kwargs)}
+        reboot_required = bios.set_config(task, **kwargs)
+
+        return {'commit_needed': reboot_required,
+                'reboot_needed': reboot_required}
 
     @base.passthru(['POST'], async=False)
     def commit_bios_config(self, task, **kwargs):
-        return {
-            'committing': bios.commit_config(task),
-            'reboot_needed': True}
+        return {'committing': bios.commit_config(task, **kwargs)}
 
     @base.passthru(['DELETE'], async=False)
     def abandon_bios_config(self, task, **kwargs):

@@ -105,7 +105,7 @@ def _get_next_boot_mode(node):
     return boot_mode
 
 
-def create_config_job(node):
+def create_config_job(node, reboot=False):
     """Create a configuration job.
 
     This method is used to apply the pending values created by
@@ -125,6 +125,11 @@ def create_config_job(node):
                  'SystemName': 'DCIM:ComputerSystem'}
     properties = {'Target': TARGET_DEVICE,
                   'ScheduledStartTime': 'TIME_NOW'}
+
+    if reboot:
+        # Graceful Reboot with forced shutdown
+        properties['RebootJobType'] = '3'
+
     try:
         client.wsman_invoke(resource_uris.DCIM_BIOSService,
                             'CreateTargetedConfigJob', selectors, properties,

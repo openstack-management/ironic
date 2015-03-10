@@ -332,7 +332,7 @@ def set_config(task, **kwargs):
 
 
 @task_manager.require_exclusive_lock
-def commit_config(task):
+def commit_config(task, **kwargs):
     """Commits pending changes added by set_config
 
     :param task: is the ironic task for running the config job.
@@ -344,9 +344,10 @@ def commit_config(task):
              with unexpected return value
 
     """
+    do_reboot = kwargs.get('reboot')
     node = task.node
     management.check_for_config_job(node)
-    management.create_config_job(node)
+    management.create_config_job(node, reboot=do_reboot)
 
 
 @task_manager.require_exclusive_lock
