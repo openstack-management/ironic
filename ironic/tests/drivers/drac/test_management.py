@@ -243,9 +243,13 @@ class DracManagementTestCase(db_base.DbTestCase):
         mock_we.assert_called_once_with(resource_uris.DCIM_BootSourceSetting,
                                         filter_query=mock.ANY)
 
+    @mock.patch.object(drac_mgmt.DracManagement, 'get_boot_device')
     @mock.patch.object(drac_mgmt, 'check_for_config_job')
     @mock.patch.object(drac_mgmt, 'create_config_job')
-    def test_set_boot_device(self, mock_ccj, mock_cfcj, mock_client_pywsman):
+    def test_set_boot_device(self, mock_ccj, mock_cfcj, mock_gbd,
+                             mock_client_pywsman):
+        mock_gbd.return_value = {'boot_device': boot_devices.PXE,
+                                 'persistent': True}
         result_xml_enum = test_utils.build_soap_xml([{'InstanceID': 'NIC'}],
                                       resource_uris.DCIM_BootSourceSetting)
         result_xml_invk = test_utils.build_soap_xml(
@@ -270,13 +274,17 @@ class DracManagementTestCase(db_base.DbTestCase):
             resource_uris.DCIM_BootConfigSetting,
             'ChangeBootOrderByInstanceID',
             None)
+        mock_gbd.assert_called_once_with(task)
         mock_cfcj.assert_called_once_with(self.node)
         mock_ccj.assert_called_once_with(self.node)
 
+    @mock.patch.object(drac_mgmt.DracManagement, 'get_boot_device')
     @mock.patch.object(drac_mgmt, 'check_for_config_job')
     @mock.patch.object(drac_mgmt, 'create_config_job')
-    def test_set_boot_device_fail(self, mock_ccj, mock_cfcj,
+    def test_set_boot_device_fail(self, mock_ccj, mock_cfcj, mock_gbd,
                                   mock_client_pywsman):
+        mock_gbd.return_value = {'boot_device': boot_devices.PXE,
+                                 'persistent': True}
         result_xml_enum = test_utils.build_soap_xml([{'InstanceID': 'NIC'}],
                                       resource_uris.DCIM_BootSourceSetting)
         result_xml_invk = test_utils.build_soap_xml(
@@ -301,13 +309,18 @@ class DracManagementTestCase(db_base.DbTestCase):
             resource_uris.DCIM_BootConfigSetting,
             'ChangeBootOrderByInstanceID',
             None)
+        mock_gbd.assert_called_once_with(task)
         mock_cfcj.assert_called_once_with(self.node)
         self.assertFalse(mock_ccj.called)
 
+    @mock.patch.object(drac_mgmt.DracManagement, 'get_boot_device')
     @mock.patch.object(drac_client.Client, 'wsman_enumerate')
     @mock.patch.object(drac_mgmt, 'check_for_config_job')
     def test_set_boot_device_client_error(self, mock_cfcj, mock_we,
+                                          mock_gbd,
                                           mock_client_pywsman):
+        mock_gbd.return_value = {'boot_device': boot_devices.PXE,
+                                 'persistent': True}
         mock_we.side_effect = exception.DracClientError('E_FAKE')
         with task_manager.acquire(self.context, self.node.uuid,
                                   shared=False) as task:
@@ -315,8 +328,23 @@ class DracManagementTestCase(db_base.DbTestCase):
             self.assertRaises(exception.DracClientError,
                               self.driver.set_boot_device, task,
                               boot_devices.PXE)
+        mock_gbd.assert_called_once_with(task)
         mock_we.assert_called_once_with(resource_uris.DCIM_BootSourceSetting,
                                         filter_query=mock.ANY)
+
+    @mock.patch.object(drac_mgmt.DracManagement, 'get_boot_device')
+    @mock.patch.object(drac_mgmt, 'check_for_config_job')
+    def test_set_boot_device_noop(self, mock_cfcj, mock_gbd,
+                                  mock_client_pywsman):
+        mock_gbd.return_value = {'boot_device': boot_devices.PXE,
+                                 'persistent': False}
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.node = self.node
+            result = self.driver.set_boot_device(task, boot_devices.PXE)
+        self.assertIsNone(result)
+        mock_gbd.assert_called_once_with(task)
+        self.assertFalse(mock_cfcj.called)
 
     def test_get_sensors_data(self, mock_client_pywsman):
         self.assertRaises(NotImplementedError,
