@@ -1,0 +1,32 @@
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+            xmlns:wsen="http://schemas.xmlsoap.org/ws/2004/09/enumeration"
+            xmlns:wsman="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd"
+            xmlns:n1="http://schemas.dell.com/wbem/wscim/1/cim-schema/2/DCIM_LifecycleJob">
+  <s:Header>
+    <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
+    <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/enumeration/EnumerateResponse</wsa:Action>
+    <wsa:RelatesTo>uuid:2453cc4f-104c-104c-8002-fd0aa2bdb228</wsa:RelatesTo>
+    <wsa:MessageID>uuid:28c00f71-1051-1051-8003-fcc71555dbe0</wsa:MessageID>
+  </s:Header>
+  <s:Body>
+    <wsen:EnumerateResponse>
+      <wsman:Items>
+        <n1:DCIM_LifecycleJob>
+          <n1:ElapsedTimeSinceCompletion xsi:nil="true"/>
+          <n1:InstanceID>JID_205731134272</n1:InstanceID>
+          <n1:JobStartTime>TIME_NOW</n1:JobStartTime>
+          <n1:JobStatus>Running</n1:JobStatus>
+          <n1:JobUntilTime>TIME_NA</n1:JobUntilTime>
+          <n1:Message>Job in progress.</n1:Message>
+          <n1:MessageArguments>NA</n1:MessageArguments>
+          <n1:MessageID>PR20</n1:MessageID>
+          <n1:Name>Config:RAID:RAID.Integrated.1-1</n1:Name>
+          <n1:PercentComplete>34</n1:PercentComplete>
+        </n1:DCIM_LifecycleJob>
+      </wsman:Items>
+      <wsen:EnumerationContext/>
+      <wsman:EndOfSequence/>
+    </wsen:EnumerateResponse>
+  </s:Body>
+</s:Envelope>

@@ -12,19 +12,32 @@
 # under the License.
 
 """
-DRAC VendorPassthruBios Driver
+DRAC VendorPassthru Driver
 """
 
+from oslo.utils import importutils
+
+from ironic.conductor import task_manager
 from ironic.drivers import base
 from ironic.drivers.modules.drac import bios
 from ironic.drivers.modules.drac import common as drac_common
+from ironic.drivers.modules.drac import job as drac_job
+from ironic.drivers.modules.drac import raid as drac_raid
+from ironic.openstack.common import log as logging
+
+pywsman = importutils.try_import('pywsman')
+
+LOG = logging.getLogger(__name__)
+
+REQUIRED_PROPERTIES = {}
+COMMON_PROPERTIES = REQUIRED_PROPERTIES
 
 
 class DracVendorPassthru(base.VendorInterface):
-    """Interface for DRAC specific BIOS configuration methods."""
+    """Interface for DRAC specific methods."""
 
     def get_properties(self):
-        return {}
+        return COMMON_PROPERTIES
 
     def validate(self, task, **kwargs):
         return drac_common.parse_driver_info(task.node)
@@ -47,3 +60,50 @@ class DracVendorPassthru(base.VendorInterface):
     @base.passthru(['DELETE'], async=False)
     def abandon_bios_config(self, task, **kwargs):
         return {'abandoned': bios.abandon_config(task)}
+
+    @base.passthru(['GET'], method='list_raid_controllers', async=False)
+    @task_manager.require_exclusive_lock
+    def list_raid_controllers(self, task, **kwargs):
+        return {'raid_controllers': drac_raid.list_raid_controllers(task.node)}
+
+    @base.passthru(['GET'], method='list_physical_disks', async=False)
+    @task_manager.require_exclusive_lock
+    def list_physical_disks(self, task, **kwargs):
+        return {'physical_disks': drac_raid.list_physical_disks(task.node)}
+
+    @base.passthru(['GET'], method='list_virtual_disks', async=False)
+    @task_manager.require_exclusive_lock
+    def list_virtual_disks(self, task, **kwargs):
+        return {'virtual_disks': drac_raid.list_virtual_disks(task.node)}
+
+    @base.passthru(['POST'], method='create_virtual_disk', async=False)
+    @task_manager.require_exclusive_lock
+    def create_virtual_disk(self, task, **kwargs):
+        return drac_raid.create_virtual_disk(task.node, **kwargs)
+
+    @base.passthru(['POST'], method='delete_virtual_disk', async=False)
+    @task_manager.require_exclusive_lock
+    def delete_virtual_disk(self, task, **kwargs):
+        return drac_raid.delete_virtual_disk(task.node, **kwargs)
+
+    @base.passthru(['POST'], method='apply_pending_raid_config', async=False)
+    @task_manager.require_exclusive_lock
+    def apply_pending_raid_config(self, task, **kwargs):
+        return {'job_id': drac_raid.apply_pending_config(task.node,
+                                                              **kwargs)}
+
+    @base.passthru(['POST'], method='delete_pending_raid_config', async=False)
+    @task_manager.require_exclusive_lock
+    def delete_pending_raid_config(self, task, **kwargs):
+        return drac_raid.delete_pending_config(task.node, **kwargs)
+
+    @base.passthru(['POST'], method='get_job', async=False)
+    @task_manager.require_exclusive_lock
+    def get_job(self, task, **kwargs):
+        return {'job': drac_job.get_job(task.node, **kwargs)}
+
+    @base.passthru(['GET'], method='list_unfinished_jobs', async=False)
+    @task_manager.require_exclusive_lock
+    def list_unfinished_jobs(self, task, **kwargs):
+        return {'unfinished_jobs': drac_job.list_unfinished_jobs(task.node,
+                                                                 **kwargs)}

@@ -15,6 +15,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import os
 from xml.etree import ElementTree
 
 import mock
@@ -70,3 +71,13 @@ def mock_wsman_root(return_value):
     mock_xml.root.return_value = mock_xml_root
 
     return mock_xml
+
+
+def load_wsman_xml(name):
+    """Helper function to load a wsman response from file."""
+
+    with open(os.path.join(os.path.dirname(__file__), 'xmls',
+              "%s.xml" % name), 'r') as f:
+        xml_body = f.read()
+
+    return xml_body

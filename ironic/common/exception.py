@@ -518,6 +518,10 @@ class DracInvalidFilterDialect(IronicException):
                 'Supported options are %(supported)s')
 
 
+class DracLifecycleJobNotFound(NotFound):
+    message = _("Cannot find lifecycle job %(job_id)s.")
+
+
 class FailedToGetSensorData(IronicException):
     message = _("Failed to get sensor data for node %(node)s. "
                 "Error: %(error)s")

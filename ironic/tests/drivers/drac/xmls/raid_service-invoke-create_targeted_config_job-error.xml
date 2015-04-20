@@ -1,0 +1,17 @@
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+            xmlns:n1="http://schemas.dell.com/wbem/wscim/1/cim-schema/2/DCIM_RAIDService">
+  <s:Header>
+    <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
+    <wsa:Action>http://schemas.dell.com/wbem/wscim/1/cim-schema/2/DCIM_RAIDService/CreateTargetedConfigJobResponse</wsa:Action>
+    <wsa:RelatesTo>uuid:0e5fbf83-103b-103b-8002-fd0aa2bdb228</wsa:RelatesTo>
+    <wsa:MessageID>uuid:1514a5fc-1040-1040-89a2-a36fc6fe83b0</wsa:MessageID>
+  </s:Header>
+  <s:Body>
+    <n1:CreateTargetedConfigJob_OUTPUT>
+      <n1:Message>Configuration Job not Created, there are no pending Configuration changes</n1:Message>
+      <n1:MessageID>STOR026</n1:MessageID>
+      <n1:ReturnValue>2</n1:ReturnValue>
+    </n1:CreateTargetedConfigJob_OUTPUT>
+  </s:Body>
+</s:Envelope>

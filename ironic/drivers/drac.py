@@ -25,6 +25,10 @@ from ironic.drivers.modules.drac import power
 from ironic.drivers.modules.drac import vendor_passthru
 from ironic.drivers.modules import pxe
 from ironic.drivers import utils
+from ironic.openstack.common import log as logging
+
+
+LOG = logging.getLogger(__name__)
 
 
 class PXEDracDriver(base.BaseDriver):
@@ -48,5 +52,14 @@ class PXEDracDriver(base.BaseDriver):
                         'get_bios_config': self.drac_vendor,
                         'set_bios_config': self.drac_vendor,
                         'commit_bios_config': self.drac_vendor,
-                        'abandon_bios_config': self.drac_vendor}
+                        'abandon_bios_config': self.drac_vendor,
+                        'list_raid_controllers': self.drac_vendor,
+                        'list_physical_disks': self.drac_vendor,
+                        'list_virtual_disks': self.drac_vendor,
+                        'create_virtual_disk': self.drac_vendor,
+                        'delete_virtual_disk': self.drac_vendor,
+                        'apply_pending_raid_config': self.drac_vendor,
+                        'delete_pending_raid_config': self.drac_vendor,
+                        'get_job': self.drac_vendor,
+                        'list_unfinished_jobs': self.drac_vendor}
         self.vendor = utils.MixinVendorInterface(self.mapping)

@@ -58,7 +58,7 @@ def parse_driver_info(node):
         try:
             parsed_driver_info[param] = str(driver_info[param])
         except KeyError:
-            error_msgs.append(_("'%s' not supplied to DracDriver.") % param)
+            error_msgs.append(_("'%s' is not supplied to DracDriver.") % param)
         except UnicodeEncodeError:
             error_msgs.append(_("'%s' contains non-ASCII symbol.") % param)
 
@@ -108,3 +108,32 @@ def find_xml(doc, item, namespace, find_all=False):
     if find_all:
         return doc.findall(query)
     return doc.find(query)
+
+
+def get_xml_attr(xml_elem, attr_name, resource_uri):
+    return find_xml(xml_elem, attr_name, resource_uri).text.strip()
+
+
+def parse_enumeration_list(xml_elems, func):
+    result = []
+    for elem in xml_elems:
+        result.append(func(elem))
+
+    return result
+
+
+def validate_required_string(parameters, key, error_msgs, value_dict=None):
+    try:
+        if value_dict:
+            value = str(parameters[key])
+            if value not in value_dict:
+                error_msgs.append(_("value '%(value)s' is not valid for "
+                                    "'%(key)s'.") %
+                                  {'value': value, 'key': key})
+            return value_dict[value]
+        else:
+            return str(parameters[key])
+    except KeyError:
+        error_msgs.append(_("'%s' is not supplied.") % key)
+    except UnicodeEncodeError:
+        error_msgs.append(_("'%s' contains non-ASCII symbol.") % key)

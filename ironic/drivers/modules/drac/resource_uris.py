@@ -38,6 +38,18 @@ DCIM_BIOSInteger = ('http://schemas.dell.com/wbem/wscim/1/cim-schema/2/'
 DCIM_LifecycleJob = ('http://schemas.dell.com/wbem/wscim/1/cim-schema/2/'
                      'DCIM_LifecycleJob')
 
+DCIM_ControllerView = ('http://schemas.dell.com/wbem/wscim/1/cim-schema/2/'
+                       'DCIM_ControllerView')
+
+DCIM_PhysicalDiskView = ('http://schemas.dell.com/wbem/wscim/1/cim-schema/2/'
+                         'DCIM_PhysicalDiskView')
+
+DCIM_VirtualDiskView = ('http://schemas.dell.com/wbem/wscim/1/cim-schema/2/'
+                        'DCIM_VirtualDiskView')
+
+DCIM_RAIDService = ('http://schemas.dell.com/wbem/wscim/1/cim-schema/2/'
+                    'DCIM_RAIDService')
+
 CIM_XmlSchema = 'http://www.w3.org/2001/XMLSchema-instance'
 
 CIM_WSMAN = 'http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd'
