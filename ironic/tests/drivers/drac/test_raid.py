@@ -350,3 +350,366 @@ class DracManageVirtualDisksTestCase(db_base.DbTestCase):
         mock_drac_client.wsman_invoke.assert_called_once_with(
             resource_uris.DCIM_RAIDService, 'DeletePendingConfiguration',
             expected_selectors, expected_properties)
+
+
+class DracCreateRaidConfigurationTestCase(db_base.DbTestCase):
+
+    def setUp(self):
+        super(DracCreateRaidConfigurationTestCase, self).setUp()
+        mgr_utils.mock_the_extension_manager(driver='fake_drac')
+        self.node = obj_utils.create_test_node(self.context,
+                                               driver='fake_drac',
+                                               driver_info=INFO_DICT)
+        self.root_logical_disk = {
+            'controller': 'RAID.Integrated.1-1',
+            'size_gb': 50,
+            'raid_level': '1',
+            'number_of_physical_disks': 2,
+            'disk_type': 'hdd',
+            'interface_type': 'sas',
+            'volume_name': 'root_volume',
+            'is_root_volume': True
+        }
+        self.nonroot_logical_disks = [
+            {'controller': 'RAID.Integrated.1-1',
+             'size_gb': 100,
+             'number_of_physical_disks': 3,
+             'raid_level': '5',
+             'disk_type': 'hdd',
+             'interface_type': 'sas',
+             'volume_name': 'data_volume1'},
+            {'controller': 'RAID.Integrated.1-1',
+             'size_gb': 100,
+             'number_of_physical_disks': 3,
+             'raid_level': '5',
+             'disk_type': 'hdd',
+             'interface_type': 'sas',
+             'volume_name': 'data_volume2'}
+        ]
+        self.logical_disks = ([self.root_logical_disk] +
+                               self.nonroot_logical_disks)
+        self.target_raid_configuration = {'logical_disks': self.logical_disks}
+        self.node.extra['target_raid_configuration'] = (
+                                                self.target_raid_configuration)
+        self.physical_disk = {
+            'controller': 'RAID.Integrated.1-1',
+            'id': 'Disk.Bay.0:Enclosure.Internal.0-1:RAID.Integrated.1-1',
+            'disk_type': 'hdd',
+            'interface_type': 'sas',
+            'size_gb': 500,
+            'free_size_gb': 500,
+            'vendor': 'vendor',
+            'model': 'model',
+            'serial_number': 'serial',
+            'firmware_version': '42',
+            'state': 'ok',
+            'raid_state': 'ready'
+        }
+
+        self.physical_disks = []
+        for i in range(8):
+            disk = self.physical_disk.copy()
+            disk['id'] = (
+                'Disk.Bay.%s:Enclosure.Internal.0-1:RAID.Integrated.1-1' % i)
+            disk['serial_number'] = 'serial%s' % i
+            self.physical_disks.append(disk)
+
+    def test__filter_logical_disks_root_only(self):
+        logical_disks = drac_raid._filter_logical_disks(
+                self.target_raid_configuration['logical_disks'], True, False)
+
+        self.assertEqual(1, len(logical_disks))
+        self.assertEqual('root_volume', logical_disks[0]['volume_name'])
+
+    def test__filter_logical_disks_nonroot_only(self):
+        logical_disks = drac_raid._filter_logical_disks(
+            self.target_raid_configuration['logical_disks'], False, True)
+
+        self.assertEqual(2, len(logical_disks))
+        self.assertEqual('data_volume1', logical_disks[0]['volume_name'])
+        self.assertEqual('data_volume2', logical_disks[1]['volume_name'])
+
+    def test__filter_logical_disks_excelude_all(self):
+        logical_disks = drac_raid._filter_logical_disks(
+            self.target_raid_configuration['logical_disks'], False, False)
+
+        self.assertEqual(0, len(logical_disks))
+
+    def test__filter_disks_by_availability(self):
+        for i in range(7):
+            self.physical_disks[i]['raid_state'] = 'degraded'
+
+        filtered_physical_disks = drac_raid._filter_physical_disks(
+                                self.physical_disks, self.root_logical_disk)
+
+        self.assertEqual(1, len(filtered_physical_disks))
+        self.assertEqual(self.physical_disks[7]['serial_number'],
+                         filtered_physical_disks[0]['serial_number'])
+
+    def test__filter_disks_by_controller(self):
+        for i in range(7):
+            self.physical_disks[i]['controller'] = 'not the one you need'
+
+        filtered_physical_disks = drac_raid._filter_physical_disks(
+                                self.physical_disks, self.root_logical_disk)
+
+        self.assertEqual(1, len(filtered_physical_disks))
+        self.assertEqual(self.physical_disks[7]['serial_number'],
+                         filtered_physical_disks[0]['serial_number'])
+
+    def test__filter_disks_by_disk_type(self):
+        for i in range(7):
+            self.physical_disks[i]['interface_type'] = 'not the one you need'
+
+        filtered_physical_disks = drac_raid._filter_physical_disks(
+                                self.physical_disks, self.root_logical_disk)
+
+        self.assertEqual(1, len(filtered_physical_disks))
+        self.assertEqual(self.physical_disks[7]['serial_number'],
+                         filtered_physical_disks[0]['serial_number'])
+
+    def test__filter_disks_by_interface_type(self):
+        for i in range(7):
+            self.physical_disks[i]['disk_type'] = 'not the one you need'
+
+        filtered_physical_disks = drac_raid._filter_physical_disks(
+                                self.physical_disks, self.root_logical_disk)
+
+        self.assertEqual(1, len(filtered_physical_disks))
+        self.assertEqual(self.physical_disks[7]['serial_number'],
+                         filtered_physical_disks[0]['serial_number'])
+
+    def test__match_disks_valid_config(self):
+        drac_raid._match_physical_disks(self.logical_disks,
+                                        self.physical_disks)
+
+        for disk in self.logical_disks:
+            self.assertIn('physical_disks', disk)
+            self.assertEqual(disk['number_of_physical_disks'],
+                             len(disk['physical_disks']))
+
+    def test__match_disks_no_valid_config(self):
+        self.physical_disks.pop()
+
+        self.assertRaises(exception.DracInvalidRaidConfiguration,
+                          drac_raid._match_physical_disks, self.logical_disks,
+                          self.physical_disks)
+
+    def test__match_disks_with_predefined_physical_disks(self):
+        predefined_match = [
+            'Disk.Bay.5:Enclosure.Internal.0-1:RAID.Integrated.1-1',
+            'Disk.Bay.6:Enclosure.Internal.0-1:RAID.Integrated.1-1'
+        ]
+        self.root_logical_disk['physical_disks'] = predefined_match
+        self.root_logical_disk.pop('number_of_physical_disks')
+        self.root_logical_disk.pop('disk_type')
+        self.root_logical_disk.pop('interface_type')
+
+        drac_raid._match_physical_disks(self.logical_disks,
+                                        self.physical_disks)
+
+        for disk in self.logical_disks:
+            self.assertIn('physical_disks', disk)
+
+            if disk.get('is_root_volume'):
+                self.assertEqual(predefined_match, disk['physical_disks'])
+            else:
+                self.assertEqual(disk['number_of_physical_disks'],
+                                 len(disk['physical_disks']))
+
+    def test__match_disks_no_valid_config_with_predefined_physical_disks(self):
+        self.root_logical_disk['physical_disks'] = [
+            'Disk.Bay.0:Enclosure.Internal.0-1:RAID.Integrated.1-1',
+            'Disk.Bay.1:Enclosure.Internal.0-1:RAID.Integrated.1-1',
+            'Disk.Bay.2:Enclosure.Internal.0-1:RAID.Integrated.1-1'
+        ]
+
+        self.assertRaises(exception.DracInvalidRaidConfiguration,
+                          drac_raid._match_physical_disks, self.logical_disks,
+                          self.physical_disks)
+
+    def test__add_missing_options(self):
+        logical_disk = self.logical_disks[0]
+        logical_disk['physical_disks'] = self.physical_disks[:2]
+        self.assertNotIn('span_depth', logical_disk)
+        self.assertNotIn('span_length', logical_disk)
+
+        drac_raid._add_missing_options([logical_disk])
+        self.assertEqual(1, logical_disk['span_depth'])
+        self.assertEqual(len(logical_disk['physical_disks']),
+                         logical_disk['span_length'])
+
+    def test__calculate_spans_for_2_disk_and_raid_level_1(self):
+        raid_level = '1'
+        disks_count = 2
+
+        span_depth, span_length = drac_raid._calculate_spans(raid_level,
+                                                             disks_count)
+        self.assertEqual(2, span_depth)
+        self.assertEqual(1, span_length)
+
+    def test__calculate_spans_for_7_disk_and_raid_level_50(self):
+        raid_level = '5+0'
+        disks_count = 7
+
+        span_depth, span_length = drac_raid._calculate_spans(raid_level,
+                                                             disks_count)
+        self.assertEqual(6, span_depth)
+        self.assertEqual(2, span_length)
+
+    def test__calculate_spans_for_7_disk_and_raid_level_10(self):
+        raid_level = '1+0'
+        disks_count = 7
+
+        span_depth, span_length = drac_raid._calculate_spans(raid_level,
+                                                             disks_count)
+        self.assertEqual(6, span_depth)
+        self.assertEqual(3, span_length)
+
+    def test__calculate_spans_for_invalid_raid_level(self):
+        raid_level = 'foo'
+        disks_count = 7
+
+        self.assertRaises(exception.DracInvalidRaidConfiguration,
+                          drac_raid._calculate_spans, raid_level, disks_count)
+
+    @mock.patch.object(drac_raid, 'list_physical_disks', autospec=True)
+    @mock.patch.object(drac_client, 'get_wsman_client', autospec=True)
+    def test_create_configuration(self, mock_client, mock_list_physical_disks):
+        mock_list_physical_disks.return_value = self.physical_disks
+        create_disk_selectors = {
+            'CreationClassName': 'DCIM_RAIDService',
+            'SystemName': 'DCIM:ComputerSystem',
+            'Name': 'DCIM:RAIDService',
+            'SystemCreationClassName': 'DCIM_ComputerSystem'
+        }
+        create_disk_properties = {
+            'Target': 'RAID.Integrated.1-1',
+            'PDArray': [
+                'Disk.Bay.0:Enclosure.Internal.0-1:RAID.Integrated.1-1',
+                'Disk.Bay.1:Enclosure.Internal.0-1:RAID.Integrated.1-1'
+            ],
+            'VDPropNameArray': ['Size', 'RAIDLevel', mock.ANY, mock.ANY],
+            'VDPropValueArray': ['51200', '4', mock.ANY, mock.ANY]
+        }
+        apply_config_selectors = {
+            'CreationClassName': 'DCIM_RAIDService',
+            'SystemName': 'DCIM:ComputerSystem',
+            'Name': 'DCIM:RAIDService',
+            'SystemCreationClassName': 'DCIM_ComputerSystem'
+        }
+        apply_config_properties = {'ScheduledStartTime': 'TIME_NOW',
+                                   'Target': 'RAID.Integrated.1-1'}
+        apply_config_return_value = drac_client.RET_CREATED
+        mock_drac_client = mock_client.return_value
+        config = {'wsman_invoke.return_value.find.return_value.text': 42}
+        mock_drac_client.configure_mock(**config)
+        self.node.save = mock.Mock(name='save')
+
+        drac_raid.create_configuration(self.node, create_root_volume=True,
+                                                  create_nonroot_volumes=False)
+
+        mock_drac_client.wsman_invoke.assert_has_calls([
+            mock.call(resource_uris.DCIM_RAIDService, 'CreateVirtualDisk',
+                create_disk_selectors, create_disk_properties),
+            mock.call(resource_uris.DCIM_RAIDService,
+                'CreateTargetedConfigJob', apply_config_selectors,
+                apply_config_properties,
+                expected_return=apply_config_return_value)
+        ])
+        self.assertEqual([42],
+                         self.node.driver_internal_info['raid_config_job_ids'])
+        self.node.save.assert_called_once_with()
+
+    @mock.patch.object(drac_raid, 'list_physical_disks', autospec=True)
+    @mock.patch.object(drac_client, 'get_wsman_client', autospec=True)
+    def test_create_configuration_with_multiple_controllers(self, mock_client,
+            mock_list_physical_disks):
+        self.root_logical_disk['controller'] = 'controller-2'
+        self.physical_disks[0]['controller'] = 'controller-2'
+        self.physical_disks[1]['controller'] = 'controller-2'
+        mock_list_physical_disks.return_value = self.physical_disks
+        apply_config_properties_controller1 = {
+            'ScheduledStartTime': 'TIME_NOW',
+            'Target': 'RAID.Integrated.1-1',
+        }
+        apply_config_properties_controller2 = {
+            'ScheduledStartTime': 'TIME_NOW',
+            'Target': 'controller-2',
+        }
+        apply_config_return_value = drac_client.RET_CREATED
+        mock_drac_client = mock_client.return_value
+        mock_job_id1 = mock.Mock()
+        mock_job_id1.text = 42
+        mock_job_id2 = mock.Mock()
+        mock_job_id2.text = 3
+        config = {'wsman_invoke.return_value.find.side_effect': [mock_job_id1,
+                                                                 mock_job_id2]}
+        mock_drac_client.configure_mock(**config)
+
+        drac_raid.create_configuration(self.node, create_root_volume=True,
+                                                  create_nonroot_volumes=True)
+
+        mock_drac_client.wsman_invoke.assert_has_calls([
+            mock.call(resource_uris.DCIM_RAIDService,
+                'CreateTargetedConfigJob', mock.ANY,
+                apply_config_properties_controller1,
+                expected_return=apply_config_return_value),
+            mock.call(resource_uris.DCIM_RAIDService,
+                'CreateTargetedConfigJob', mock.ANY,
+                apply_config_properties_controller2,
+                expected_return=apply_config_return_value)
+        ], any_order=True)
+        self.assertEqual([42, 3],
+                         self.node.driver_internal_info['raid_config_job_ids'])
+
+    @mock.patch.object(drac_raid, 'list_physical_disks', autospec=True)
+    @mock.patch.object(drac_client, 'get_wsman_client', autospec=True)
+    def test_create_configuration_with_reboot(self, mock_client,
+                                              mock_list_physical_disks):
+        mock_list_physical_disks.return_value = self.physical_disks
+        create_disk_selectors = {
+            'CreationClassName': 'DCIM_RAIDService',
+            'SystemName': 'DCIM:ComputerSystem',
+            'Name': 'DCIM:RAIDService',
+            'SystemCreationClassName': 'DCIM_ComputerSystem'
+        }
+        create_disk_properties = {
+            'Target': 'RAID.Integrated.1-1',
+            'PDArray': [
+                'Disk.Bay.0:Enclosure.Internal.0-1:RAID.Integrated.1-1',
+                'Disk.Bay.1:Enclosure.Internal.0-1:RAID.Integrated.1-1'
+            ],
+            'VDPropNameArray': ['Size', 'RAIDLevel', mock.ANY, mock.ANY],
+            'VDPropValueArray': ['51200', '4', mock.ANY, mock.ANY]
+        }
+        apply_config_selectors = {
+            'CreationClassName': 'DCIM_RAIDService',
+            'SystemName': 'DCIM:ComputerSystem',
+            'Name': 'DCIM:RAIDService',
+            'SystemCreationClassName': 'DCIM_ComputerSystem'
+        }
+        apply_config_properties = {'ScheduledStartTime': 'TIME_NOW',
+                                   'Target': 'RAID.Integrated.1-1',
+                                   'RebootJobType': '3'}
+        apply_config_return_value = drac_client.RET_CREATED
+        mock_drac_client = mock_client.return_value
+        config = {'wsman_invoke.return_value.find.return_value.text': 42}
+        mock_drac_client.configure_mock(**config)
+        self.node.save = mock.Mock(name='save')
+
+        drac_raid.create_configuration(self.node, create_root_volume=True,
+                                                  create_nonroot_volumes=False,
+                                                  reboot=True)
+
+        mock_drac_client.wsman_invoke.assert_has_calls([
+            mock.call(resource_uris.DCIM_RAIDService, 'CreateVirtualDisk',
+                create_disk_selectors, create_disk_properties),
+            mock.call(resource_uris.DCIM_RAIDService,
+                'CreateTargetedConfigJob', apply_config_selectors,
+                apply_config_properties,
+                expected_return=apply_config_return_value)
+        ])
+        self.assertEqual([42],
+                         self.node.driver_internal_info['raid_config_job_ids'])
+        self.node.save.assert_called_once_with()

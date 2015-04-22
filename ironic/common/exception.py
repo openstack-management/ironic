@@ -518,6 +518,10 @@ class DracInvalidFilterDialect(IronicException):
                 'Supported options are %(supported)s')
 
 
+class DracInvalidRaidConfiguration(IronicException):
+    message = _('Invalid RAID configuration. Reason: %(reason)s')
+
+
 class DracLifecycleJobNotFound(NotFound):
     message = _("Cannot find lifecycle job %(job_id)s.")
 

@@ -15,8 +15,11 @@
 DRAC VendorPassthru Driver
 """
 
+from oslo.utils import excutils
 from oslo.utils import importutils
 
+from ironic.common import exception
+from ironic.common.i18n import _LE
 from ironic.conductor import task_manager
 from ironic.drivers import base
 from ironic.drivers.modules.drac import bios
@@ -107,3 +110,19 @@ class DracVendorPassthru(base.VendorInterface):
     def list_unfinished_jobs(self, task, **kwargs):
         return {'unfinished_jobs': drac_job.list_unfinished_jobs(task.node,
                                                                  **kwargs)}
+
+    @base.passthru(['POST'], method='create_raid_configuration', async=False)
+    @task_manager.require_exclusive_lock
+    def create_raid_configuration(self, task, **kwargs):
+        try:
+            drac_raid.create_configuration(task.node, **kwargs)
+        except exception.DracRequestFailed as exc:
+            with excutils.save_and_reraise_exception():
+                node = task.node
+                LOG.error(_LE('DRAC driver failed to create RAID '
+                              'configuration on node %(node_uuid)s. '
+                              'Reason: %(error)s.'),
+                          {'node_uuid': node.uuid, 'error': exc})
+                node.maintenance = True
+                node.last_error = exc
+                node.save()

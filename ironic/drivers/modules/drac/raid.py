@@ -18,7 +18,7 @@ DRAC RAID specific methods
 from oslo.utils import excutils
 
 from ironic.common import exception
-from ironic.common.i18n import _, _LE
+from ironic.common.i18n import _, _LE, _LI
 from ironic.drivers.modules.drac import client as drac_client
 from ironic.drivers.modules.drac import common as drac_common
 from ironic.drivers.modules.drac import resource_uris
@@ -541,3 +541,196 @@ def delete_pending_config(node, **kwargs):
                       {'raid_controller_fqdd': raid_controller,
                        'node_uuid': node.uuid,
                        'error': exc})
+
+
+def create_configuration(node, **kwargs):
+    """Creates the RAID configuration defined on the node.
+
+    Reads the RAID configuration from
+    node.extra['target_raid_configuration'] and creates the logical disks,
+    applies the changes on the controller and saves to job id created by DRAC
+    in node.extra['raid_config_job_ids'].
+    The RAID configuration can be defined in 2 ways: either by defining the IDs
+    of the physical disks, or letting the driver assign physical disks to the
+    logical disks.
+    The target_raid_configuration should use the following format:
+        {
+            'logical_disks': [
+                {'controller': 'RAID.Integrated.1-1',
+                 'size_gb': 50,
+                 'raid_level': '1',
+                 'number_of_physical_disks': 2,
+                 'disk_type': 'hdd',
+                 'interface_type': 'sas',
+                 'volume_name': 'root_volume',
+                 'is_root_volume': True},
+                {'controller': 'RAID.Integrated.1-1',
+                 'size_gb': 100,
+                 'physical_disks': [
+                     'Disk.Bay.0:Enclosure.Internal.0-1:RAID.Integrated.1-1',
+                     'Disk.Bay.1:Enclosure.Internal.0-1:RAID.Integrated.1-1',
+                     'Disk.Bay.2:Enclosure.Internal.0-1:RAID.Integrated.1-1']
+                 'raid_level': '5',
+                 'volume_name': 'data_volume1'}
+            ]
+        }
+    The required attributes of the logical disk in the
+    target_raid_configuration dictionary are: controller, size_gb, raid_level
+    and either the list of physical_disks or the number_of_physical_disks.
+    :param node: an ironic node object.
+    :param kwargs: additional kwargs passed to the method:
+
+        :create_root_volume:
+            indicates whether the root volume should be created or not.
+            (required)
+        :create_nonroot_volumes:
+            indicates whether the  non-root volumes should be created or not.
+            (required)
+        :reboot:
+            Whether or not DRAC should take care of the required reboot.
+    """
+
+    if 'target_raid_configuration' not in node.extra:
+        LOG.info(_LI('target_raid_configuration is not defined for node '
+                     '%(node_uuid)s '), {'node_uuid': node.uuid})
+        return
+
+    create_root_volume = kwargs['create_root_volume']
+    create_nonroot_volumes = kwargs['create_nonroot_volumes']
+
+    logical_disks = node.extra['target_raid_configuration']['logical_disks']
+    physical_disks = list_physical_disks(node)
+
+    logical_disks_to_create = _filter_logical_disks(logical_disks,
+                                    create_root_volume, create_nonroot_volumes)
+    _match_physical_disks(logical_disks_to_create, physical_disks)
+    _add_missing_options(logical_disks_to_create)
+
+    controllers = set()
+    for logical_disk in logical_disks_to_create:
+        controllers.add(logical_disk['controller'])
+        create_virtual_disk(node, **logical_disk)
+
+    driver_internal_info = node.driver_internal_info
+    driver_internal_info['raid_config_job_ids'] = []
+    controllers = list(controllers)
+    for controller in controllers:
+        # Do a reboot only for the last controller if requested
+        if controller == controllers[-1]:
+            reboot = kwargs.get('reboot')
+            job_id = apply_pending_config(node, raid_controller=controller,
+                                          reboot=reboot)
+        else:
+            job_id = apply_pending_config(node, raid_controller=controller,
+                                          reboot=False)
+
+        driver_internal_info['raid_config_job_ids'].append(job_id)
+
+    node.driver_internal_info = driver_internal_info
+    node.save()
+
+
+def _match_physical_disks(logical_disks, physical_disks):
+    used_physical_disks = []
+
+    # find already assigned physical disks - they are not going to be used
+    for logical_disk in logical_disks:
+        if 'physical_disks' in logical_disk:
+            used_disks = ([disk
+                for used_disk_id in logical_disk['physical_disks']
+                for disk in physical_disks
+                if (logical_disk['controller'] == disk['controller'] and
+                    disk['id'] == used_disk_id)])
+            used_physical_disks.extend(used_disks)
+
+    # assign physical disks
+    for logical_disk in logical_disks:
+        if 'physical_disks' in logical_disk:
+            continue
+
+        candidates = [disk for disk
+                      in _filter_physical_disks(physical_disks, logical_disk)
+                      if disk not in used_physical_disks]
+        selected = candidates[:logical_disk['number_of_physical_disks']]
+
+        if logical_disk['number_of_physical_disks'] != len(selected):
+            reason = (_('Cannot find physical disks for %s') % logical_disk)
+            raise exception.DracInvalidRaidConfiguration(reason=reason)
+
+        logical_disk['physical_disks'] = [disk['id'] for disk in selected]
+        used_physical_disks.extend(selected)
+
+    return logical_disks
+
+
+def _filter_physical_disks(physical_disks, logical_disk_config):
+    filtered_disks = [disk for disk in physical_disks
+        if (disk['raid_state'] == 'ready' and
+            disk['controller'] == logical_disk_config['controller'])]
+
+    if 'interface_type' in logical_disk_config:
+        filtered_disks = [disk for disk in filtered_disks
+                          if (disk['interface_type'] ==
+                                logical_disk_config['interface_type'])]
+
+    if 'disk_type' in logical_disk_config:
+        filtered_disks = [disk for disk in filtered_disks
+                          if (disk['disk_type'] ==
+                                logical_disk_config['disk_type'])]
+
+    return filtered_disks
+
+
+def _filter_logical_disks(logical_disks, include_root_volume,
+                                         include_nonroot_volumes):
+    filtered_disks = []
+    for disk in logical_disks:
+        if include_root_volume and disk.get('is_root_volume'):
+            filtered_disks.append(disk)
+
+        if include_nonroot_volumes and not disk.get('is_root_volume'):
+            filtered_disks.append(disk)
+
+    return filtered_disks
+
+
+def _add_missing_options(logical_disks):
+    for disk in logical_disks:
+        if 'size_mb' not in disk:
+            disk['size_mb'] = disk['size_gb'] * 2 ** 10
+            disk.pop('size_gb')
+
+        span_length, span_depth = _calculate_spans(disk['raid_level'],
+                                                   len(disk['physical_disks']))
+        if 'span_depth' not in disk:
+            disk['span_depth'] = span_depth
+
+        if 'span_length' not in disk:
+            disk['span_length'] = span_length
+
+        disk['raid_controller'] = 'RAID.Integrated.1-1'
+
+
+def _calculate_spans(raid_level, disks_count):
+    """Calculates span depth and length for a virtual disk
+
+    Calculates the number of spans (span depth) required for the virtual disk
+    and the number of disks per span (span length).
+
+    :param raid_level: RAID level of the virtual disk.
+    :param disk_count: number of physical disks used for the virtual disk.
+    :returns: A tuple containing the span length and the span depth.
+    """
+
+    # NOTE(ifarkas): logic as implemented in Crowbar:
+    #                https://github.com/opencrowbar/hardware/blob/develop/raid/crowbar_engine/barclamp_raid/app/models/barclamp_raid/driver.rb#L121 # noqa
+    if raid_level in ['0', '1', '5', '6']:
+        return (disks_count, 1)
+    elif raid_level in ['5+0', '6+0']:
+        return ((disks_count >> 1) << 1, 2)
+    elif raid_level in ['1+0']:
+        return ((disks_count >> 1) << 1, disks_count >> 1)
+    else:
+        reason = (_('Cannot calculate disk spans for RAID level "%s"') %
+                  raid_level)
+        raise exception.DracInvalidRaidConfiguration(reason=reason)
