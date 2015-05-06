@@ -19,7 +19,7 @@ from oslo.utils import excutils
 from oslo.utils import importutils
 
 from ironic.common import exception
-from ironic.common.i18n import _LE
+from ironic.common.i18n import _LE, _LI
 from ironic.conductor import task_manager
 from ironic.drivers import base
 from ironic.drivers.modules.drac import bios
@@ -126,3 +126,19 @@ class DracVendorPassthru(base.VendorInterface):
                 node.maintenance = True
                 node.last_error = exc
                 node.save()
+
+    @base.passthru(['POST'], method='configure_bios_settings', async=False)
+    @task_manager.require_exclusive_lock
+    def configure_bios_settings(self, task, **kwargs):
+        node = task.node
+
+        if 'bios_settings' in node.extra:
+            commit_needed = bios.set_config(task,
+                                            **node.extra['bios_settings'])
+            if commit_needed:
+                bios.commit_config(task)
+        else:
+            LOG.info(_LI('DRAC driver cannot set configure the BIOS '
+                         'because the bios_settings is not set in '
+                         'node.extra on node %(node_uuid)s'),
+                     {'node_uuid': node.uuid})

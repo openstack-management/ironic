@@ -81,6 +81,7 @@ class PXEDracDriver(base.BaseDriver):
                         'apply_pending_raid_config': self.drac_vendor,
                         'delete_pending_raid_config': self.drac_vendor,
                         'create_raid_configuration': self.drac_vendor,
+                        'configure_bios_settings': self.drac_vendor,
                         'get_job': self.drac_vendor,
                         'list_unfinished_jobs': self.drac_vendor}
         self.vendor = utils.MixinVendorInterface(self.mapping)
